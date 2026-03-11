@@ -1,0 +1,17 @@
+# GHDL build artefacts
+*.cf
+*.o
+e~*
+tb_fir_filter
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Simulation output
+results/*.vcd
+
+# OS
+.DS_Store
+Thumbs.db
