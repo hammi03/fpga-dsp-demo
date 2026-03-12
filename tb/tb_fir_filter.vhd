@@ -34,12 +34,17 @@ architecture sim of tb_fir_filter is
     -- Component declaration
     -- -------------------------------------------------------------------------
     component fir_filter is
+        generic (
+            TAPS        : integer := 8;
+            DATA_BITS   : integer := 16;
+            SCALE_SHIFT : integer := 8
+        );
         port (
             clk       : in  std_logic;
             rst       : in  std_logic;
-            data_in   : in  signed(15 downto 0);
+            data_in   : in  signed(DATA_BITS-1 downto 0);
             valid_in  : in  std_logic;
-            data_out  : out signed(15 downto 0);
+            data_out  : out signed(DATA_BITS-1 downto 0);
             valid_out : out std_logic
         );
     end component;
@@ -103,6 +108,11 @@ begin
     -- DUT instantiation
     -- -------------------------------------------------------------------------
     dut : fir_filter
+        generic map (
+            TAPS        => 8,
+            DATA_BITS   => 16,
+            SCALE_SHIFT => 8
+        )
         port map (
             clk       => clk,
             rst       => rst,
