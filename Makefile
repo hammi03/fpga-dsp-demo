@@ -5,17 +5,20 @@ RTL_FIR      = rtl/fir_filter.vhd
 RTL_DET      = rtl/threshold_detector.vhd
 RTL_PEAK     = rtl/peak_detector.vhd
 RTL_PIPELINE = rtl/dsp_pipeline.vhd
+RTL_MF       = rtl/matched_filter.vhd
 TB_FIR       = tb/tb_fir_filter.vhd
 TB_PIPELINE  = tb/tb_dsp_pipeline.vhd
 TB_PEAK      = tb/tb_peak_detector.vhd
+TB_MF        = tb/tb_matched_filter.vhd
 
 VCD_FIR      = results/sim.vcd
 VCD_PIPELINE = results/sim_pipeline.vcd
 VCD_PEAK     = results/sim_peak.vcd
+VCD_MF       = results/sim_mf.vcd
 
-.PHONY: all sim sim-pipeline sim-peak clean wave wave-pipeline wave-peak
+.PHONY: all sim sim-pipeline sim-peak sim-mf clean wave wave-pipeline wave-peak wave-mf
 
-all: sim sim-pipeline sim-peak
+all: sim sim-pipeline sim-peak sim-mf
 
 sim:
 	$(GHDL) -a $(STD) $(RTL_FIR) $(TB_FIR)
@@ -32,6 +35,11 @@ sim-peak:
 	$(GHDL) -e $(STD) tb_peak_detector
 	$(GHDL) -r $(STD) tb_peak_detector --vcd=$(VCD_PEAK) --stop-time=5us
 
+sim-mf:
+	$(GHDL) -a $(STD) $(RTL_MF) $(TB_MF)
+	$(GHDL) -e $(STD) tb_matched_filter
+	$(GHDL) -r $(STD) tb_matched_filter --vcd=$(VCD_MF) --stop-time=5us
+
 wave:
 	gtkwave $(VCD_FIR) &
 
@@ -41,6 +49,9 @@ wave-pipeline:
 wave-peak:
 	gtkwave $(VCD_PEAK) &
 
+wave-mf:
+	gtkwave $(VCD_MF) &
+
 clean:
-	rm -f *.cf *.o e~* tb_fir_filter tb_dsp_pipeline tb_peak_detector \
-	      $(VCD_FIR) $(VCD_PIPELINE) $(VCD_PEAK)
+	rm -f *.cf *.o e~* tb_fir_filter tb_dsp_pipeline tb_peak_detector tb_matched_filter \
+	      $(VCD_FIR) $(VCD_PIPELINE) $(VCD_PEAK) $(VCD_MF)
