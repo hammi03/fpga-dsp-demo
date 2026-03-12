@@ -11,14 +11,18 @@ verified simulation vs. software reference model.
 ## Pipeline Overview
 
 ```
-data_in --> [ FIR Low-Pass Filter ] --> filtered_out --> [ Threshold Detector ] --> detected
-                 (Stage 1)                                     (Stage 2)
+                                             +--> [ Threshold Detector ] --> detected
+                                             |         (Stage 2a)
+data_in --> [ FIR Low-Pass Filter ] --> filtered_out
+                 (Stage 1)                   |
+                                             +--> [ Peak Detector ] --> peak_val, peak_pos
+                                                      (Stage 2b)
 ```
 
-The filter removes high-frequency noise before the detector decides whether
-the remaining signal is strong enough to be relevant.  Neither stage alone is
-sufficient: without the filter, noise triggers false alarms; without the
-detector, there is no decision output.
+The filter removes high-frequency noise first.  The two detector stages then
+operate on the clean signal independently:
+- **Threshold Detector** — answers *"is there a signal right now?"* (one bit per cycle)
+- **Peak Detector** — answers *"where was the maximum, and how large was it?"* (once per event)
 
 ---
 
@@ -49,6 +53,15 @@ on every cycle** (max|error| = 0).
 The last test is the key demonstration: a raw amplitude of 1000 would trigger
 the detector directly, but the FIR filter suppresses it to 0 first.
 
+### Peak Detector Tests
+
+| Test | Input pulse | Expected peak_val | Expected peak_pos | Result |
+|------|-------------|-------------------|-------------------|--------|
+| Positive peak | 0, 600, 800, **1000**, 700, 400 | 1000 | 2 | PASS |
+| Negative peak | 0, -600, -800, **-1000**, -700, -400 | -1000 | 2 | PASS |
+| Below threshold | 100, 300, 490, 300, 100 | — | — | PASS (no detection) |
+| Two pulses (A then B) | pulse 1000 then pulse 900 | 1000 / 900 | 1 / 1 | PASS |
+
 ---
 
 ## Project Structure
@@ -57,11 +70,13 @@ the detector directly, but the FIR filter suppresses it to 0 first.
 fpga-dsp-demo/
 ├── rtl/
 │   ├── fir_filter.vhd           # Generic FIR low-pass filter (Stage 1)
-│   ├── threshold_detector.vhd   # Amplitude threshold detector (Stage 2)
-│   └── dsp_pipeline.vhd         # Top-level: connects both stages
+│   ├── threshold_detector.vhd   # Amplitude threshold detector (Stage 2a)
+│   ├── peak_detector.vhd        # Peak finder with state machine (Stage 2b)
+│   └── dsp_pipeline.vhd         # Top-level: connects filter + threshold detector
 ├── tb/
 │   ├── tb_fir_filter.vhd        # FIR self-checking testbench
-│   └── tb_dsp_pipeline.vhd      # Pipeline self-checking testbench
+│   ├── tb_dsp_pipeline.vhd      # Pipeline self-checking testbench
+│   └── tb_peak_detector.vhd     # Peak detector self-checking testbench
 ├── scripts/
 │   ├── design_filter.py         # Coefficient design + frequency response plot
 │   └── plot_results.py          # VCD parser + VHDL vs Python comparison plot
@@ -97,6 +112,26 @@ Sum = 256 -> DC gain = 1.0.  Symmetric -> H(Nyquist) = 0 exactly.
 
 Asserts `detected='1'` for one clock cycle when `|data_in| > THRESHOLD`.
 Latency: 1 clock cycle.
+
+### peak_detector.vhd
+
+| Parameter | Generic | Default | Description |
+|-----------|---------|---------|-------------|
+| Word width | `DATA_BITS` | 16 | Must match upstream filter |
+| Threshold | `THRESHOLD` | 500 | Detection window boundary |
+| Position width | `POS_BITS` | 16 | Bits for peak position counter |
+
+State machine with two states:
+
+```
+IDLE ──(|data_in| > THRESHOLD)──► TRACKING ──(|data_in| <= THRESHOLD)──► IDLE
+                                      │                                     ▲
+                                      └── track running max each cycle ─────┘
+                                          output peak_val, peak_pos, peak_valid
+```
+
+Outputs a one-cycle pulse on `peak_valid` with `peak_val` (signed amplitude)
+and `peak_pos` (0-based cycle index within the detection window).
 
 ### dsp_pipeline.vhd
 
@@ -152,9 +187,10 @@ Structural top-level — no logic of its own, only instantiates and connects
 ### Run simulations
 
 ```bash
-make sim           # FIR filter testbench  -> results/sim.vcd
-make sim-pipeline  # Pipeline testbench    -> results/sim_pipeline.vcd
-make all           # both
+make sim           # FIR filter testbench     -> results/sim.vcd
+make sim-pipeline  # Pipeline testbench       -> results/sim_pipeline.vcd
+make sim-peak      # Peak detector testbench  -> results/sim_peak.vcd
+make all           # all three
 make clean         # remove build artefacts
 ```
 
@@ -174,7 +210,7 @@ python scripts/plot_results.py    # VHDL vs Python comparison (needs sim.vcd)
 ### Expected output
 
 ```
-# FIR testbench (make sim)
+# make sim  (FIR filter, 10 tests)
 PASS  Impulse[0]  got=-1
 PASS  Impulse[1]  got=-6
 PASS  Impulse[2]  got=25
@@ -186,11 +222,18 @@ PASS  Impulse[7]  got=-1
 PASS  DC steady-state = 1000
 PASS  Nyquist rejection (alternating +-1000 -> 0)
 
-# Pipeline testbench (make sim-pipeline)
+# make sim-pipeline  (threshold detector, 4 tests)
 PASS  Silence: detected = 0
 PASS  Weak DC 200: detected = 0
 PASS  Strong DC 1000: detected = 1
 PASS  Nyquist +-1000 filtered to 0: detected = 0
+
+# make sim-peak  (peak detector, 5 tests)
+PASS  Positive peak  peak_val=1000  peak_pos=2
+PASS  Negative peak  peak_val=-1000  peak_pos=2
+PASS  Below threshold: peak_valid = 0
+PASS  Pulse A  peak_val=1000  peak_pos=1
+PASS  Pulse B  peak_val=900   peak_pos=1
 ```
 
 ---
@@ -203,7 +246,8 @@ PASS  Nyquist +-1000 filtered to 0: detected = 0
 - [x] Python reference model vs. GHDL simulation (max|error| = 0)
 - [x] Generic tap count, data width, scale via VHDL generics
 - [x] Threshold detector
-- [x] DSP pipeline top-level (filter + detector)
-- [ ] Peak detection
+- [x] DSP pipeline top-level (filter + threshold detector)
+- [x] Peak detector with state machine (IDLE / TRACKING)
 - [ ] Matched filter / correlator
+- [ ] Unified pipeline top-level (filter + threshold + peak)
 - [ ] Configurable pipeline via package
