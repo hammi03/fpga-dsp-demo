@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FPGA DSP Demo</title>
+  <link rel="stylesheet" href="css/style.css" />
+  <!-- Plotly from CDN (no build step required) -->
+  <script src="https://cdn.plot.ly/plotly-2.32.0.min.js" defer></script>
+  <script src="js/app.js" defer></script>
+</head>
+<body>
+<div class="page-wrap">
+
+  <!-- ── Header ──────────────────────────────────────────────────────────── -->
+  <header>
+    <h1>FPGA <span>DSP</span> Demo</h1>
+    <p>Fixed-point digital signal processing pipeline — VHDL design with Python-verified simulation</p>
+    <div class="header-badges">
+      <span class="badge green">19 / 19 Tests PASS</span>
+      <span class="badge blue">VHDL-2008</span>
+      <span class="badge">GHDL Simulated</span>
+      <span class="badge">Python Reference Model</span>
+    </div>
+  </header>
+
+  <!-- ── Tabs ─────────────────────────────────────────────────────────────── -->
+  <nav class="tabs">
+    <button class="tab-btn active" data-tab="fir-panel">FIR Low-Pass Filter</button>
+    <button class="tab-btn"        data-tab="mf-panel">Matched Filter</button>
+    <button class="tab-btn"        data-tab="pl-panel">Full Pipeline</button>
+  </nav>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       TAB 1 — FIR FILTER
+  ════════════════════════════════════════════════════════════════════════════ -->
+  <section id="fir-panel" class="tab-panel active">
+
+    <p class="section-desc">
+      8-tap Hamming-windowed sinc filter, cut-off at 0.25&thinsp;×&thinsp;f<sub>s</sub>.
+      Coefficients are scaled integers (×256); DC gain = 1.0; H(Nyquist) = 0 exactly.
+    </p>
+
+    <!-- Stats -->
+    <div class="stat-row">
+      <div class="stat">
+        <div class="stat-label">Taps</div>
+        <div class="stat-value" id="fir-stat-taps">—</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">Scale (2^N)</div>
+        <div class="stat-value" id="fir-stat-scale">—</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">DC gain</div>
+        <div class="stat-value green" id="fir-stat-dc">—</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">H(Nyquist)</div>
+        <div class="stat-value green" id="fir-stat-nyq">—</div>
+      </div>
+    </div>
+
+    <!-- Coefficients + Frequency response -->
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-title">Coefficients  h[n]</div>
+        <div id="fir-coeffs-plot" class="plot plot-md"></div>
+      </div>
+      <div class="card">
+        <div class="card-title">Frequency Response  |H(f)|</div>
+        <div id="fir-freq-plot" class="plot plot-md"></div>
+      </div>
+    </div>
+
+    <!-- Test signal viewer -->
+    <div class="card">
+      <div class="card-title">Test Signals</div>
+      <div class="callout">
+        <strong>How the filter behaves:</strong>
+        Impulse input recovers the filter coefficients.
+        DC input passes through unchanged (unity gain).
+        Nyquist-frequency input (alternating ±1000) is completely suppressed to 0.
+      </div>
+      <div class="controls">
+        <button class="btn active" data-test="impulse">Impulse</button>
+        <button class="btn"        data-test="dc">DC</button>
+        <button class="btn"        data-test="nyquist">Nyquist noise</button>
+      </div>
+      <div class="grid-2">
+        <div>
+          <div style="font-size:0.78rem;color:var(--muted);margin-bottom:6px">INPUT</div>
+          <div id="fir-test-input"  class="plot plot-sm"></div>
+        </div>
+        <div>
+          <div style="font-size:0.78rem;color:var(--muted);margin-bottom:6px">FIR OUTPUT</div>
+          <div id="fir-test-output" class="plot plot-sm"></div>
+        </div>
+      </div>
+    </div>
+
+  </section>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       TAB 2 — MATCHED FILTER
+  ════════════════════════════════════════════════════════════════════════════ -->
+  <section id="mf-panel" class="tab-panel">
+
+    <p class="section-desc">
+      A matched filter is a FIR filter whose coefficients are the
+      <strong>time-reversed template</strong>.
+      When the input contains the template exactly, the output is maximised
+      (= signal energy ÷ scale).  Any other waveform produces a lower output.
+    </p>
+
+    <!-- Stats -->
+    <div class="stat-row">
+      <div class="stat">
+        <div class="stat-label">Template peak</div>
+        <div class="stat-value" id="mf-stat-peak">—</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">Threshold</div>
+        <div class="stat-value warn" id="mf-stat-thresh">—</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">Signal energy</div>
+        <div class="stat-value" id="mf-stat-energy">—</div>
+      </div>
+    </div>
+
+    <!-- Result table -->
+    <div class="card">
+      <div class="card-title">Detection Results</div>
+      <table class="result-table">
+        <thead>
+          <tr>
+            <th>Signal</th>
+            <th>Peak output</th>
+            <th>vs template</th>
+            <th>Decision</th>
+          </tr>
+        </thead>
+        <tbody id="mf-result-body"></tbody>
+      </table>
+    </div>
+
+    <!-- 4-column input / output plots -->
+    <div class="card">
+      <div class="card-title">Input vs. Matched Filter Output — all four test signals</div>
+
+      <div class="grid-2" style="margin-bottom:16px">
+        <div>
+          <div style="font-size:0.75rem;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em">Input</div>
+          <div id="mf-in-template"  class="plot plot-sm" style="margin-bottom:12px"></div>
+          <div id="mf-in-flat"      class="plot plot-sm" style="margin-bottom:12px"></div>
+          <div id="mf-in-noise"     class="plot plot-sm" style="margin-bottom:12px"></div>
+          <div id="mf-in-reversed"  class="plot plot-sm"></div>
+        </div>
+        <div>
+          <div style="font-size:0.75rem;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em">MF Output (dashed = threshold)</div>
+          <div id="mf-out-template" class="plot plot-sm" style="margin-bottom:12px"></div>
+          <div id="mf-out-flat"     class="plot plot-sm" style="margin-bottom:12px"></div>
+          <div id="mf-out-noise"    class="plot plot-sm" style="margin-bottom:12px"></div>
+          <div id="mf-out-reversed" class="plot plot-sm"></div>
+        </div>
+      </div>
+    </div>
+
+  </section>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       TAB 3 — FULL PIPELINE
+  ════════════════════════════════════════════════════════════════════════════ -->
+  <section id="pl-panel" class="tab-panel">
+
+    <p class="section-desc">
+      Complete four-stage pipeline simulation.
+      A scaled template signal (×4) is sent through the FIR filter,
+      then the matched filter, and finally the peak detector.
+      The blue shaded region marks the template window in the input.
+    </p>
+
+    <!-- Pipeline diagram -->
+    <div class="pipeline-diagram">
+      <div class="pipe-block stage-fir">FIR<br><small>Low-Pass</small></div>
+      <div class="pipe-arrow">→</div>
+      <div class="pipe-split">
+        <div class="pipe-block stage-thr">Threshold<br><small>Detector</small></div>
+        <div class="pipe-block stage-mf">Matched<br><small>Filter</small></div>
+      </div>
+      <div class="pipe-arrow">→</div>
+      <div class="pipe-block stage-peak">Peak<br><small>Detector</small></div>
+    </div>
+
+    <!-- Stats -->
+    <div class="stat-row">
+      <div class="stat">
+        <div class="stat-label">Peaks found</div>
+        <div class="stat-value green" id="pl-stat-peaks">—</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">Threshold det.</div>
+        <div class="stat-value" id="pl-stat-tdet">—</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">Threshold peak</div>
+        <div class="stat-value warn" id="pl-stat-tpeak">—</div>
+      </div>
+    </div>
+
+    <!-- Three stacked plots -->
+    <div class="card">
+      <div class="card-title">Stage 0 — Raw Input</div>
+      <div id="pl-raw" class="plot plot-sm"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Stage 1 — FIR Output  &amp;  Threshold Events</div>
+      <div id="pl-fir" class="plot plot-sm"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Stage 2 — Matched Filter Output  &amp;  Peak Detections</div>
+      <div id="pl-mf" class="plot plot-md"></div>
+    </div>
+
+    <!-- Peak event table -->
+    <div class="card">
+      <div class="card-title">Peak Detection Events</div>
+      <table class="result-table">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>peak_val</th>
+            <th>At cycle</th>
+          </tr>
+        </thead>
+        <tbody id="pl-peak-body"></tbody>
+      </table>
+    </div>
+
+  </section>
+
+  <!-- ── Footer ────────────────────────────────────────────────────────────── -->
+  <footer>
+    <span>FPGA DSP Demo — VHDL-2008 · GHDL · Python</span>
+    <a href="https://github.com/hammi03/fpga-dsp-demo" target="_blank">
+      View source on GitHub →
+    </a>
+  </footer>
+
+</div><!-- /page-wrap -->
+</body>
+</html>
