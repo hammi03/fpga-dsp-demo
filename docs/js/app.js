@@ -58,31 +58,20 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
   });
 });
 
-// ── Load JSON data then boot ───────────────────────────────────────────────────
-fetch('data/fir.json')
-  .then(r => r.json())
-  .then(firData => {
-    initFIR(firData);
-    initMatched();
-    initPipeline();
-  })
-  .catch(() => {
-    // Static data unavailable — still init matched + pipeline (use JS only)
-    initFIR(null);
-    initMatched();
-    initPipeline();
-  });
+// ── Boot immediately — all data computed from dsp.js ─────────────────────────
+initFIR();
+initMatched();
+initPipeline();
 
 
 // ═════════════════════════════════════════════════════════════════════════════
-// TAB 1 — FIR FILTER
+// TAB 1 — FIR FILTER  (fully computed from dsp.js — no JSON needed)
 // ═════════════════════════════════════════════════════════════════════════════
-function initFIR(d) {
-  if (!d) return;
-
+function initFIR() {
   const coeffs = DSP.FIR_COEFFS;
+  const SCALE  = 1 << DSP.FIR_SCALE;  // 256
 
-  // Coefficient bar chart
+  // ── Coefficient bar chart ──────────────────────────────────────────────────
   Plotly.newPlot('fir-coeffs-plot', [{
     x: coeffs.map((_, i) => i), y: coeffs,
     type: 'bar', marker: { color: C.blue, opacity: 0.85 },
@@ -94,10 +83,23 @@ function initFIR(d) {
     bargap: 0.3,
   }), CFG);
 
-  // Frequency response
-  const fr = d.freq_response;
+  // ── Frequency response (DFT computed in JS) ────────────────────────────────
+  const nPts = 300;
+  const freqX = [], freqDb = [];
+  for (let i = 0; i <= nPts; i++) {
+    const f = i / (2 * nPts);  // 0 → 0.5 (Nyquist)
+    let re = 0, im = 0;
+    for (let k = 0; k < coeffs.length; k++) {
+      const theta = 2 * Math.PI * f * k;
+      re += (coeffs[k] / SCALE) * Math.cos(theta);
+      im -= (coeffs[k] / SCALE) * Math.sin(theta);
+    }
+    freqX.push(f);
+    freqDb.push(20 * Math.log10(Math.max(Math.sqrt(re * re + im * im), 1e-10)));
+  }
+
   Plotly.newPlot('fir-freq-plot', [{
-    x: fr.freq, y: fr.db,
+    x: freqX, y: freqDb,
     type: 'scatter', mode: 'lines',
     line: { color: C.blue, width: 2 },
     hovertemplate: 'f/fs=%{x:.3f}  %{y:.1f} dB<extra></extra>',
@@ -117,13 +119,36 @@ function initFIR(d) {
     ],
   }), CFG);
 
-  // Test signal viewer
-  let activeTest = 'impulse';
+  // ── Test signals (computed with DSP.fir) ───────────────────────────────────
+  const N = 48;
+  const tests = {
+    impulse: {
+      label: 'Impulse (x[4]=256)',
+      input: Object.assign(new Array(N).fill(0), { 4: SCALE }),
+    },
+    dc: {
+      label: 'DC (constant 1000)',
+      input: new Array(N).fill(1000),
+    },
+    nyquist: {
+      label: 'Nyquist (alternating ±1000)',
+      input: Array.from({ length: N }, (_, k) => 1000 * (k % 2 === 0 ? 1 : -1)),
+    },
+  };
+  for (const t of Object.values(tests)) {
+    // fix: Object.assign on array needs proper array
+    if (!Array.isArray(t.input)) t.input = Array.from(t.input);
+    t.output = DSP.fir(DSP.FIR_COEFFS, t.input, DSP.FIR_SCALE);
+  }
+  // fix impulse input — Object.assign doesn't work cleanly above
+  tests.impulse.input = new Array(N).fill(0);
+  tests.impulse.input[4] = SCALE;
+  tests.impulse.output = DSP.fir(DSP.FIR_COEFFS, tests.impulse.input, DSP.FIR_SCALE);
+
   function renderFIRTest(key) {
-    activeTest = key;
     document.querySelectorAll('#fir-panel .btn[data-test]').forEach(b =>
       b.classList.toggle('active', b.dataset.test === key));
-    const t   = d.tests[key];
+    const t   = tests[key];
     const xs  = t.input.map((_, i) => i);
     const col = { impulse: C.blue, dc: C.green, nyquist: C.red };
     Plotly.react('fir-test-input',  [stepTrace(xs, t.input,  col[key], 'Input')],
@@ -133,11 +158,12 @@ function initFIR(d) {
       mkLayout({ title: { text: 'FIR Output', font: { size: 11, color: C.text } },
                  margin: { l: 48, r: 12, t: 28, b: 36 } }), CFG);
   }
+
   document.querySelectorAll('#fir-panel .btn[data-test]').forEach(btn =>
     btn.addEventListener('click', () => renderFIRTest(btn.dataset.test)));
   renderFIRTest('impulse');
 
-  document.getElementById('fir-stat-taps').textContent  = DSP.FIR_COEFFS.length;
+  document.getElementById('fir-stat-taps').textContent  = coeffs.length;
   document.getElementById('fir-stat-scale').textContent = `2^${DSP.FIR_SCALE}`;
   document.getElementById('fir-stat-dc').textContent    = '1.0';
   document.getElementById('fir-stat-nyq').textContent   = '0';

@@ -26,16 +26,16 @@
 
   <!-- ── Tabs ──────────────────────────────────────────────────────────────── -->
   <nav class="tabs">
-    <button class="tab-btn active" data-tab="fir-panel">FIR Low-Pass Filter</button>
+    <button class="tab-btn"        data-tab="fir-panel">FIR Low-Pass Filter</button>
     <button class="tab-btn"        data-tab="mf-panel">Matched Filter</button>
-    <button class="tab-btn"        data-tab="pl-panel">Pipeline ▶</button>
+    <button class="tab-btn active" data-tab="pl-panel">Pipeline ▶</button>
   </nav>
 
 
   <!-- ═══════════════════════════════════════════════════════════════════════
        TAB 1 — FIR FILTER
   ════════════════════════════════════════════════════════════════════════════ -->
-  <section id="fir-panel" class="tab-panel active">
+  <section id="fir-panel" class="tab-panel">
 
     <p class="section-desc">
       8-tap Hamming-windowed sinc, cut-off 0.25&thinsp;×&thinsp;f<sub>s</sub>.
@@ -147,7 +147,7 @@
   <!-- ═══════════════════════════════════════════════════════════════════════
        TAB 3 — FULL PIPELINE  (interactive + animated)
   ════════════════════════════════════════════════════════════════════════════ -->
-  <section id="pl-panel" class="tab-panel">
+  <section id="pl-panel" class="tab-panel active">
 
     <p class="section-desc">
       Pick a preset or enter your own signal, then press <strong>▶ Play</strong>
