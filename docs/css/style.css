@@ -31,6 +31,7 @@ body {
   max-width: 1200px;
   margin: 0 auto;
   padding: 0 24px 80px;
+  overflow-x: hidden;   /* catch-all for any residual overflow */
 }
 
 /* ── Header ───────────────────────────────────────────────────────────────── */
@@ -123,6 +124,8 @@ header p {
   border-radius: var(--radius);
   padding: 20px 22px;
   margin-bottom: 20px;
+  overflow: hidden;   /* clip any overflowing Plotly SVG */
+  min-width: 0;
 }
 
 .card-title {
@@ -135,7 +138,7 @@ header p {
 }
 
 /* ── Plot containers ──────────────────────────────────────────────────────── */
-.plot { width: 100%; }
+.plot { width: 100%; min-width: 0; overflow: hidden; }
 .plot-sm  { height: 220px; }
 .plot-md  { height: 300px; }
 .plot-lg  { height: 380px; }
@@ -144,6 +147,10 @@ header p {
 /* ── Grid helpers ─────────────────────────────────────────────────────────── */
 .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
 .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+
+/* Grid children must have min-width:0 — otherwise Plotly SVG forces columns
+   wider than the available space (CSS grid min-width:auto default). */
+.grid-2 > *, .grid-3 > *, .grid-4 > * { min-width: 0; }
 
 @media (max-width: 800px) {
   .grid-2 { grid-template-columns: 1fr; }
