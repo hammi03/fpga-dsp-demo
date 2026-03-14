@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>FPGA DSP Demo</title>
+  <title>Fixed-Point DSP Pipeline — FPGA Demo</title>
   <link rel="stylesheet" href="css/style.css" />
   <script src="https://cdn.plot.ly/plotly-2.32.0.min.js" defer></script>
   <script src="js/dsp.js"  defer></script>
@@ -14,15 +14,47 @@
 
   <!-- ── Header ────────────────────────────────────────────────────────────── -->
   <header>
-    <h1>FPGA <span>DSP</span> Demo</h1>
-    <p>Fixed-point signal processing pipeline — VHDL design · GHDL simulation · Python verified</p>
+    <h1>Fixed-Point <span>DSP</span> Pipeline</h1>
+    <p class="header-sub">
+      Synthesizable VHDL-2008 · FIR pre-filter → matched filter → peak detection ·
+      verified cycle-for-cycle against a Python integer reference model
+    </p>
     <div class="header-badges">
       <span class="badge green">19 / 19 Tests PASS</span>
+      <span class="badge green">max|error| = 0</span>
       <span class="badge blue">VHDL-2008</span>
-      <span class="badge">GHDL Simulated</span>
-      <span class="badge">max|error| = 0</span>
+      <span class="badge blue">GHDL Simulated</span>
+      <span class="badge">Fixed-Point · No FP Hardware</span>
     </div>
   </header>
+
+  <!-- ── Architecture summary strip ───────────────────────────────────────── -->
+  <div class="grid-3">
+    <div class="fact-card">
+      <div class="fact-card-label">RTL Architecture</div>
+      <div class="fact-card-title">4 synthesizable modules, fully parameterised</div>
+      <div class="fact-card-desc">
+        FIR low-pass · threshold detector · matched filter · peak detector —
+        connected as a VHDL-2008 structural top-level via generic constants.
+      </div>
+    </div>
+    <div class="fact-card">
+      <div class="fact-card-label">Verification</div>
+      <div class="fact-card-title">19 / 19 assertions pass · max|error| = 0</div>
+      <div class="fact-card-desc">
+        Per-module and full-pipeline testbenches simulated in GHDL.
+        Every output compared cycle-for-cycle against a Python integer reference model.
+      </div>
+    </div>
+    <div class="fact-card">
+      <div class="fact-card-label">Fixed-Point Arithmetic</div>
+      <div class="fact-card-title">Integer MAC · arithmetic right-shift scaling</div>
+      <div class="fact-card-desc">
+        Coefficients scaled ×256, accumulated in 32-bit integers, truncated with
+        arithmetic right-shift — identical operations in both VHDL and Python.
+      </div>
+    </div>
+  </div>
 
   <!-- ── Tabs ──────────────────────────────────────────────────────────────── -->
   <nav class="tabs">
@@ -39,8 +71,16 @@
 
     <p class="section-desc">
       8-tap Hamming-windowed sinc, cut-off 0.25&thinsp;×&thinsp;f<sub>s</sub>.
-      Coefficients are scaled integers (×256). DC gain = 1.0. H(Nyquist) = 0 exactly.
+      Coefficients are scaled integers (×256). DC gain = 1.0 exactly. H(Nyquist) = 0 exactly.
     </p>
+
+    <div class="design-note">
+      <div class="dn-label">Design rationale</div>
+      <strong>Why Hamming window?</strong> Hamming tapering suppresses stopband sidelobes
+      while keeping the filter short enough for 8 taps. Scaling coefficients by ×256 keeps all
+      multiply-accumulate arithmetic in 32-bit integers — no floating-point hardware.
+      DC gain and Nyquist rejection are verified exact (not approximate) in the testbench.
+    </div>
 
     <div class="stat-row">
       <div class="stat"><div class="stat-label">Taps</div>
@@ -55,26 +95,26 @@
 
     <div class="grid-2">
       <div class="card">
-        <div class="card-title">Coefficients h[n]</div>
+        <div class="card-title">Coefficients h[n]  — scaled integers (×256)</div>
         <div id="fir-coeffs-plot" class="plot plot-md"></div>
       </div>
       <div class="card">
-        <div class="card-title">Frequency Response |H(f)|</div>
+        <div class="card-title">Magnitude Response |H(f)|  — computed via DFT</div>
         <div id="fir-freq-plot" class="plot plot-md"></div>
       </div>
     </div>
 
     <div class="card">
-      <div class="card-title">Test Signals</div>
+      <div class="card-title">Testbench stimulus — three verification cases</div>
       <div class="callout">
-        <strong>Impulse</strong> recovers the filter coefficients. &nbsp;
-        <strong>DC</strong> passes through at unity gain. &nbsp;
-        <strong>Nyquist noise</strong> (alternating ±1000) is completely suppressed to 0 in steady state.
+        <strong>Impulse</strong> — output recovers the filter coefficients exactly (impulse response test). &nbsp;
+        <strong>DC</strong> — constant input passes through at unity gain. &nbsp;
+        <strong>Nyquist noise</strong> — alternating ±1000 is suppressed to 0 in steady state.
       </div>
       <div class="controls">
         <button class="btn active" data-test="impulse">Impulse</button>
-        <button class="btn"        data-test="dc">DC</button>
-        <button class="btn"        data-test="nyquist">Nyquist noise</button>
+        <button class="btn"        data-test="dc">DC (unity gain)</button>
+        <button class="btn"        data-test="nyquist">Nyquist rejection</button>
       </div>
       <div class="grid-2">
         <div>
@@ -98,31 +138,39 @@
 
     <p class="section-desc">
       Coefficients = <strong>time-reversed template</strong>.
-      Output is maximised when the input matches the template exactly.
-      Any other waveform produces a lower correlation value.
+      Output peaks at signal energy ÷ scale when the input matches the template exactly.
+      All other waveforms produce a strictly lower peak — demonstrated below with four test signals.
     </p>
 
+    <div class="design-note">
+      <div class="dn-label">Design rationale</div>
+      <strong>Why a matched filter?</strong> For a known pulse shape, the matched filter
+      maximises output SNR at the moment of alignment — no other causal linear filter does better.
+      The theoretical peak equals the signal's energy divided by the scale factor (380 here).
+      The threshold is set at 50 % of this peak, giving a clear margin over mismatched signals.
+    </div>
+
     <div class="stat-row">
-      <div class="stat"><div class="stat-label">Template peak</div>
+      <div class="stat"><div class="stat-label">Theoretical peak</div>
         <div class="stat-value" id="mf-stat-peak">380</div></div>
-      <div class="stat"><div class="stat-label">Threshold</div>
+      <div class="stat"><div class="stat-label">Detection threshold</div>
         <div class="stat-value warn" id="mf-stat-thresh">190</div></div>
-      <div class="stat"><div class="stat-label">Signal energy</div>
+      <div class="stat"><div class="stat-label">Template energy (raw)</div>
         <div class="stat-value" id="mf-stat-energy">97500</div></div>
     </div>
 
     <div class="card">
-      <div class="card-title">Detection Results</div>
+      <div class="card-title">Detection results — four test signals vs threshold</div>
       <table class="result-table">
         <thead><tr>
-          <th>Signal</th><th>Peak output</th><th>vs template</th><th>Decision</th>
+          <th>Input signal</th><th>MF peak output</th><th>% of template peak</th><th>Decision</th>
         </tr></thead>
         <tbody id="mf-result-body"></tbody>
       </table>
     </div>
 
     <div class="card">
-      <div class="card-title">Input vs. MF Output — four test signals</div>
+      <div class="card-title">Input waveform vs. matched filter output — dashed line = threshold (190)</div>
       <div class="grid-2">
         <div>
           <div class="plot-label">INPUT</div>
@@ -132,7 +180,7 @@
           <div id="mf-in-reversed"  class="plot plot-sm"></div>
         </div>
         <div>
-          <div class="plot-label">MF OUTPUT  (dashed = threshold)</div>
+          <div class="plot-label">MF OUTPUT</div>
           <div id="mf-out-template" class="plot plot-sm" style="margin-bottom:12px"></div>
           <div id="mf-out-flat"     class="plot plot-sm" style="margin-bottom:12px"></div>
           <div id="mf-out-noise"    class="plot plot-sm" style="margin-bottom:12px"></div>
@@ -150,19 +198,21 @@
   <section id="pl-panel" class="tab-panel active">
 
     <p class="section-desc">
-      Pick a preset or enter your own signal, then press <strong>▶ Play</strong>
-      to watch the data flow sample-by-sample through all four pipeline stages.
+      The complete detection chain, clock-cycle by clock-cycle. Select a preset or enter
+      your own integer samples, then press <strong>▶ Play</strong> — the FIR filters the
+      raw input, the threshold detector flags energy bursts, the matched filter maximises
+      SNR for the known pulse, and the peak detector reports the strongest match.
     </p>
 
     <!-- Pipeline diagram -->
     <div class="pipeline-diagram">
-      <div class="pipe-block stage-raw"  data-stage="raw" >Input</div>
+      <div class="pipe-block stage-raw"  data-stage="raw">Raw Input</div>
       <div class="pipe-arrow">→</div>
-      <div class="pipe-block stage-fir"  data-stage="fir" >FIR<br><small>Low-Pass</small></div>
+      <div class="pipe-block stage-fir"  data-stage="fir">FIR<br><small>Low-Pass</small></div>
       <div class="pipe-arrow">→</div>
       <div class="pipe-split">
-        <div class="pipe-block stage-thr"  data-stage="fir">Threshold<br><small>Detector</small></div>
-        <div class="pipe-block stage-mf"   data-stage="mf" >Matched<br><small>Filter</small></div>
+        <div class="pipe-block stage-thr" data-stage="fir">Threshold<br><small>Detector</small></div>
+        <div class="pipe-block stage-mf"  data-stage="mf">Matched<br><small>Filter</small></div>
       </div>
       <div class="pipe-arrow">→</div>
       <div class="pipe-block stage-peak" data-stage="peak">Peak<br><small>Detector</small></div>
@@ -170,7 +220,7 @@
 
     <!-- Signal selector -->
     <div class="card">
-      <div class="card-title">Input Signal</div>
+      <div class="card-title">Input signal — select preset or enter custom integer samples</div>
       <div class="controls" style="margin-bottom:12px">
         <button class="btn preset-btn active" data-preset="template">Template ×4</button>
         <button class="btn preset-btn"        data-preset="double">Two Pulses</button>
@@ -181,7 +231,7 @@
 
       <div id="custom-input-area" style="display:none;margin-top:8px">
         <div style="font-size:0.82rem;color:var(--muted);margin-bottom:6px">
-          Enter up to 64 integer sample values, comma or space separated:
+          Up to 64 integer sample values, comma or space separated:
         </div>
         <textarea id="custom-text" rows="3"
           placeholder="e.g.  0 0 0 200 600 1000 400 0 0 0"
@@ -209,33 +259,33 @@
 
     <!-- Stats -->
     <div class="stat-row">
-      <div class="stat"><div class="stat-label">Peaks found</div>
+      <div class="stat"><div class="stat-label">Peaks detected</div>
         <div class="stat-value green" id="pl-stat-peaks">—</div></div>
-      <div class="stat"><div class="stat-label">Thr. detector</div>
+      <div class="stat"><div class="stat-label">FIR threshold</div>
         <div class="stat-value" id="pl-stat-tdet">—</div></div>
-      <div class="stat"><div class="stat-label">Thr. peak det.</div>
+      <div class="stat"><div class="stat-label">MF threshold</div>
         <div class="stat-value warn" id="pl-stat-tpeak">—</div></div>
     </div>
 
     <!-- Three stacked plots -->
     <div class="card">
-      <div class="card-title">Stage 0 — Raw Input</div>
+      <div class="card-title">Stage 0 — Raw input signal</div>
       <div id="pl-raw" class="plot plot-sm"></div>
     </div>
     <div class="card">
-      <div class="card-title">Stage 1 — After FIR  +  Threshold Events (▲)</div>
+      <div class="card-title">Stage 1 — After FIR low-pass · threshold crossings (▲)</div>
       <div id="pl-fir" class="plot plot-sm"></div>
     </div>
     <div class="card">
-      <div class="card-title">Stage 2 — Matched Filter  +  Peak Detections (★)</div>
+      <div class="card-title">Stage 2 — Matched filter output · peak detections (★) · dashed = threshold</div>
       <div id="pl-mf" class="plot plot-md"></div>
     </div>
 
     <!-- Peak table -->
     <div class="card">
-      <div class="card-title">Peak Detection Events</div>
+      <div class="card-title">Peak detection events — reported by peak_detector.vhd state machine</div>
       <table class="result-table">
-        <thead><tr><th>#</th><th>peak_val</th><th>At cycle</th></tr></thead>
+        <thead><tr><th>#</th><th>peak_val</th><th>Clock cycle</th></tr></thead>
         <tbody id="pl-peak-body"></tbody>
       </table>
     </div>
@@ -243,7 +293,7 @@
   </section>
 
   <footer>
-    <span>FPGA DSP Demo — VHDL-2008 · GHDL · Python</span>
+    <span>Fixed-Point DSP Pipeline — VHDL-2008 · GHDL · Python reference model</span>
     <a href="https://github.com/hammi03/fpga-dsp-demo" target="_blank">View source on GitHub →</a>
   </footer>
 
