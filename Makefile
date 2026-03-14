@@ -1,6 +1,7 @@
 GHDL    = ghdl
 STD     = --std=08
 
+RTL_PKG      = rtl/dsp_config_pkg.vhd
 RTL_FIR      = rtl/fir_filter.vhd
 RTL_DET      = rtl/threshold_detector.vhd
 RTL_PEAK     = rtl/peak_detector.vhd
@@ -53,7 +54,7 @@ wave-peak:
 	gtkwave $(VCD_PEAK) &
 
 sim-full:
-	$(GHDL) -a $(STD) $(RTL_FIR) $(RTL_DET) $(RTL_PEAK) $(RTL_MF) $(RTL_FULL) $(TB_FULL)
+	$(GHDL) -a $(STD) $(RTL_PKG) $(RTL_FIR) $(RTL_DET) $(RTL_PEAK) $(RTL_MF) $(RTL_FULL) $(TB_FULL)
 	$(GHDL) -e $(STD) tb_full_pipeline
 	$(GHDL) -r $(STD) tb_full_pipeline --vcd=$(VCD_FULL) --stop-time=10us
 

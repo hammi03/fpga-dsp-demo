@@ -92,16 +92,19 @@ suppressed in the correlation output.
 ```
 fpga-dsp-demo/
 ├── rtl/
+│   ├── dsp_config_pkg.vhd       # Project-wide configuration package (single source of truth)
 │   ├── fir_filter.vhd           # Generic FIR low-pass filter (Stage 1)
 │   ├── threshold_detector.vhd   # Amplitude threshold detector (Stage 2a)
 │   ├── peak_detector.vhd        # Peak finder with state machine (Stage 2b)
 │   ├── matched_filter.vhd       # Matched filter / correlator (Stage 3)
-│   └── dsp_pipeline.vhd         # Top-level: connects filter + threshold detector
+│   ├── dsp_pipeline.vhd         # Pipeline: filter + threshold detector
+│   └── full_pipeline.vhd        # Unified top-level: all four stages
 ├── tb/
 │   ├── tb_fir_filter.vhd        # FIR self-checking testbench
 │   ├── tb_dsp_pipeline.vhd      # Pipeline self-checking testbench
 │   ├── tb_peak_detector.vhd     # Peak detector self-checking testbench
-│   └── tb_matched_filter.vhd    # Matched filter self-checking testbench
+│   ├── tb_matched_filter.vhd    # Matched filter self-checking testbench
+│   └── tb_full_pipeline.vhd     # Full pipeline integration testbench
 ├── scripts/
 │   ├── design_filter.py         # LP coefficient design + frequency response plot
 │   ├── design_matched_filter.py # MF coefficient design + correlation plot
@@ -179,6 +182,32 @@ Latency: 1 clock cycle.
 Structural top-level — no logic of its own, only instantiates and connects
 `fir_filter` and `threshold_detector`.  Total latency: 2 clock cycles.
 
+### full_pipeline.vhd
+
+Unified top-level connecting all four stages:
+
+```
+data_in --> [FIR] --> [Threshold Detector] --> detected
+                 └--> [Matched Filter]  --> [Peak Detector] --> peak_val, peak_pos, peak_valid
+```
+
+| Parameter | Generic | Default | Description |
+|-----------|---------|---------|-------------|
+| Word width | `DATA_BITS` | 16 | Shared across all stages |
+| FIR taps | `FIR_TAPS` | 8 | |
+| FIR scale | `FIR_SCALE` | 8 | |
+| MF scale | `MF_SCALE` | 8 | |
+| Det. threshold | `THRESHOLD_DET` | 500 | For threshold detector on FIR output |
+| Peak threshold | `THRESHOLD_PEAK` | 190 | For peak detector on MF output (= MF_peak/2) |
+| Position width | `POS_BITS` | 16 | |
+
+### dsp_config_pkg.vhd
+
+Project-wide configuration package. Defines all numeric constants (`C_DATA_BITS`,
+`C_FIR_TAPS`, `C_FIR_SCALE`, `C_MF_SCALE`, `C_MF_PEAK`, `C_THRESHOLD_DET`,
+`C_THRESHOLD_PEAK`, `C_POS_BITS`) in one place.
+Use `use work.dsp_config_pkg.all;` in any VHDL file to import.
+
 ---
 
 ## Architecture
@@ -228,11 +257,12 @@ Structural top-level — no logic of its own, only instantiates and connects
 ### Run simulations
 
 ```bash
-make sim           # FIR filter testbench     -> results/sim.vcd
-make sim-pipeline  # Pipeline testbench       -> results/sim_pipeline.vcd
-make sim-peak      # Peak detector testbench  -> results/sim_peak.vcd
-make sim-mf        # Matched filter testbench -> results/sim_mf.vcd
-make all           # all four
+make sim           # FIR filter testbench        -> results/sim.vcd
+make sim-pipeline  # Pipeline testbench          -> results/sim_pipeline.vcd
+make sim-peak      # Peak detector testbench     -> results/sim_peak.vcd
+make sim-mf        # Matched filter testbench    -> results/sim_mf.vcd
+make sim-full      # Full pipeline testbench     -> results/sim_full.vcd
+make all           # all five
 make clean         # remove build artefacts
 ```
 
@@ -298,5 +328,5 @@ PASS  Reversed template peak (expected ~361, < 380)  peak=361
 - [x] DSP pipeline top-level (filter + threshold detector)
 - [x] Peak detector with state machine (IDLE / TRACKING)
 - [x] Matched filter / correlator
-- [ ] Unified pipeline top-level (filter + threshold + peak + matched filter)
-- [ ] Configurable pipeline via package
+- [x] Unified pipeline top-level (filter + threshold + matched filter + peak)
+- [x] Configurable pipeline via package (`dsp_config_pkg.vhd`)

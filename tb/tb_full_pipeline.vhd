@@ -21,15 +21,17 @@
 library ieee;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
+use work.dsp_config_pkg.all;
 
 entity tb_full_pipeline is
 end entity tb_full_pipeline;
 
 architecture sim of tb_full_pipeline is
 
-    constant CLK_PERIOD : time    := 10 ns;
-    constant DATA_BITS  : integer := 16;
-    constant THRESHOLD  : integer := 190;
+    constant CLK_PERIOD     : time    := 10 ns;
+    constant DATA_BITS      : integer := C_DATA_BITS;
+    constant THRESHOLD_DET  : integer := C_THRESHOLD_DET;
+    constant THRESHOLD_PEAK : integer := C_THRESHOLD_PEAK;
 
     signal clk        : std_logic := '0';
     signal rst        : std_logic := '1';
@@ -83,12 +85,13 @@ begin
 
     dut : entity work.full_pipeline
         generic map (
-            DATA_BITS => DATA_BITS,
-            FIR_TAPS  => 8,
-            FIR_SCALE => 8,
-            MF_SCALE  => 8,
-            THRESHOLD => THRESHOLD,
-            POS_BITS  => 16
+            DATA_BITS      => DATA_BITS,
+            FIR_TAPS       => 8,
+            FIR_SCALE      => 8,
+            MF_SCALE       => 8,
+            THRESHOLD_DET  => THRESHOLD_DET,
+            THRESHOLD_PEAK => THRESHOLD_PEAK,
+            POS_BITS       => 16
         )
         port map (
             clk        => clk,
