@@ -12,14 +12,15 @@
 -- MF coefficients:  [0,  0,   0, 100, 250, 150,  50,   0]  (time-reversed)
 -- SCALE_SHIFT = 8  ->  output = dot(h, x) >> 8
 -- Signal energy     = sum(T^2) = 97 500
--- Expected peak out = 97500 >> 8 = 380  (when input matches template)
--- Suggested threshold: 190  (half of peak)
+-- Expected peak out = 97500 >> 8 = 380  (integer division; exact match only)
+-- Suggested threshold: 190  (half of peak; ~6 dB margin against noise/mismatch)
 --
 -- Generics:
 --   DATA_BITS   : word width (input and output, signed)
 --   SCALE_SHIFT : arithmetic right-shift applied to accumulator
 --
--- Architecture: identical to fir_filter.vhd; coefficients are fixed.
+-- Architecture: identical to fir_filter.vhd with fixed 8-tap coefficients.
+--   (Unlike fir_filter, TAPS is not a generic; the template length is fixed at 8.)
 -- Latency: 1 clock cycle.
 -- Standard: IEEE 1076-2008.
 -- =============================================================================

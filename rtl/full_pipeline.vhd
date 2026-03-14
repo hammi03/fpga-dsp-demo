@@ -24,9 +24,9 @@
 --   FIR_SCALE      : FIR coefficient scaling exponent (2^N)
 --   MF_SCALE       : Matched filter scaling exponent (2^N)
 --   THRESHOLD_DET  : |FIR output| threshold for threshold detector
---                    (operates on raw filtered signal, e.g. 500)
+--                    (operates on FIR-filtered signal; see C_THRESHOLD_DET in dsp_config_pkg)
 --   THRESHOLD_PEAK : |MF output| threshold for peak detector
---                    (operates on correlation output; suggested: MF_peak/2 = 190)
+--                    (operates on correlation output; see C_THRESHOLD_PEAK = C_MF_PEAK/2 = 190)
 --   POS_BITS       : peak position counter width
 --
 -- Standard: IEEE 1076-2008
@@ -42,8 +42,8 @@ entity full_pipeline is
         FIR_TAPS       : integer := 8;
         FIR_SCALE      : integer := 8;
         MF_SCALE       : integer := 8;
-        THRESHOLD_DET  : integer := 500;  -- for threshold_detector on FIR output
-        THRESHOLD_PEAK : integer := 190;  -- for peak_detector on MF output (= MF_peak/2)
+        THRESHOLD_DET  : integer := 500;  -- for threshold_detector on FIR output (C_THRESHOLD_DET)
+        THRESHOLD_PEAK : integer := 190;  -- for peak_detector on MF output (= C_MF_PEAK/2)
         POS_BITS       : integer := 16
     );
     port (

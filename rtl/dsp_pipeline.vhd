@@ -36,9 +36,9 @@ entity dsp_pipeline is
         rst          : in  std_logic;
         data_in      : in  signed(DATA_BITS-1 downto 0);
         valid_in     : in  std_logic;
-        filtered_out : out signed(DATA_BITS-1 downto 0);  -- FIR output
-        detected     : out std_logic;                      -- threshold flag
-        valid_out    : out std_logic                       -- aligned with detected
+        filtered_out : out signed(DATA_BITS-1 downto 0);  -- FIR output (1-cycle latency)
+        detected     : out std_logic;                      -- '1' when |filtered_out| > THRESHOLD
+        valid_out    : out std_logic                       -- '1' when detected is valid (2-cycle latency)
     );
 end entity dsp_pipeline;
 

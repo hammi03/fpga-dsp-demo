@@ -3,12 +3,14 @@
 -- Peak Detector with State Machine
 --
 -- Monitors a signed input stream and finds the sample with the largest
--- absolute value within a detection window (defined by THRESHOLD).
+-- absolute value within a detection window (signal above THRESHOLD).
+-- Reports the peak value and its 0-based cycle position when the signal
+-- falls back below THRESHOLD.
 --
--- State machine:
+-- State machine (two states; DONE is merged into TRACKING for lower latency):
 --   IDLE     : waiting for |data_in| > THRESHOLD
---   TRACKING : signal is above threshold; track running maximum
---   DONE     : signal dropped back below threshold; output peak for one cycle
+--   TRACKING : signal is above threshold; track running maximum;
+--              when signal drops below threshold, output peak and return to IDLE
 --
 -- Outputs:
 --   peak_val   : signed value of the sample with the largest |amplitude|
@@ -20,7 +22,8 @@
 --   THRESHOLD : detection threshold for |data_in|
 --   POS_BITS  : width of the position counter (max window = 2^POS_BITS cycles)
 --
--- Latency to first output: variable (depends on signal shape)
+-- Latency to first peak_valid pulse: variable; minimum 3 cycles
+--   (1 cycle to enter TRACKING + 1 sample above threshold + 1 cycle to exit)
 -- Standard: IEEE 1076-2008
 -- =============================================================================
 
@@ -92,11 +95,11 @@ begin
                     when IDLE =>
                         -- Wait for signal to rise above threshold
                         if valid_in = '1' and abs_in > to_signed(THRESHOLD, ABS_BITS) then
-                            -- First sample of the detection window
+                            -- First sample of the detection window (position 0)
                             max_val <= data_in;
                             max_abs <= abs_in;
-                            max_pos <= (others => '0');
-                            pos_cnt <= to_unsigned(1, POS_BITS);
+                            max_pos <= (others => '0');  -- this sample is at position 0
+                            pos_cnt <= to_unsigned(1, POS_BITS);  -- next sample will be at position 1
                             state   <= TRACKING;
                         end if;
 

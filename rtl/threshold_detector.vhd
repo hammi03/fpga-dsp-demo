@@ -8,16 +8,18 @@
 --
 -- Generics:
 --   DATA_BITS : input word width (must match upstream FIR filter)
---   THRESHOLD : detection threshold (unsigned magnitude, same unit as data_in)
+--   THRESHOLD : detection threshold (compared against |data_in|; same unit as data_in)
 --
 -- Ports:
 --   clk       : system clock (rising edge active)
 --   rst       : synchronous reset, active high
 --   data_in   : signed input sample (from FIR filter output)
 --   valid_in  : '1' when data_in holds a valid sample
---   detected  : '1' for one cycle when |data_in| > THRESHOLD
+--   detected  : '1' for one cycle when |data_in| > THRESHOLD; '0' otherwise
 --   valid_out : follows valid_in (pipeline handshake)
 --
+-- Note: detected is updated every clock cycle regardless of valid_in.
+--       valid_out indicates when the result is meaningful downstream.
 -- Latency: 1 clock cycle
 -- Standard: IEEE 1076-2008
 -- =============================================================================
