@@ -1,367 +1,478 @@
-/* ── app.js — FPGA DSP Demo Visualisation ─────────────────────────────────── */
+/**
+ * app.js — FPGA DSP Demo visualisation
+ * Tabs: FIR Filter | Matched Filter | Pipeline (interactive + animated)
+ */
 
 'use strict';
 
-// ── Plotly theme shared across all charts ─────────────────────────────────
-const THEME = {
-  bg:      '#1a1d27',
-  paper:   '#1a1d27',
-  grid:    '#2a2d3a',
-  text:    '#8892a4',
-  accent:  '#4C9BE8',
-  accent2: '#7C5CE8',
-  pass:    '#4CE874',
-  warn:    '#E8C44C',
-  danger:  '#E8624C',
+// ── Plotly theme ──────────────────────────────────────────────────────────────
+const C = {
+  bg:     '#1a1d27',
+  grid:   '#2a2d3a',
+  text:   '#8892a4',
+  white:  '#e2e8f0',
+  blue:   '#4C9BE8',
+  purple: '#7C5CE8',
+  green:  '#4CE874',
+  yellow: '#E8C44C',
+  red:    '#E8624C',
 };
 
-const LAYOUT_BASE = {
-  paper_bgcolor: THEME.paper,
-  plot_bgcolor:  THEME.bg,
-  font:          { color: THEME.text, family: 'system-ui, sans-serif', size: 11 },
-  margin:        { l: 48, r: 16, t: 28, b: 40 },
-  xaxis: {
-    gridcolor:   THEME.grid,
-    zerolinecolor: THEME.grid,
-    tickfont:    { size: 10 },
-  },
-  yaxis: {
-    gridcolor:   THEME.grid,
-    zerolinecolor: THEME.grid,
-    tickfont:    { size: 10 },
-  },
+const BASE_LAYOUT = {
+  paper_bgcolor: C.bg,
+  plot_bgcolor:  C.bg,
+  font:   { color: C.text, family: 'system-ui,sans-serif', size: 11 },
+  margin: { l: 52, r: 16, t: 32, b: 40 },
+  xaxis:  { gridcolor: C.grid, zerolinecolor: C.grid, tickfont: { size: 10 } },
+  yaxis:  { gridcolor: C.grid, zerolinecolor: C.grid, tickfont: { size: 10 } },
   showlegend: false,
   hovermode: 'x unified',
 };
 
-const PLOTLY_CONFIG = { responsive: true, displayModeBar: false };
+const CFG = { responsive: true, displayModeBar: false };
 
-function layout(overrides = {}) {
-  return Object.assign({}, LAYOUT_BASE, overrides);
+function mkLayout(extra = {}) {
+  return Object.assign({}, BASE_LAYOUT,
+    extra,
+    extra.xaxis ? { xaxis: Object.assign({}, BASE_LAYOUT.xaxis, extra.xaxis) } : {},
+    extra.yaxis ? { yaxis: Object.assign({}, BASE_LAYOUT.yaxis, extra.yaxis) } : {},
+  );
 }
 
-// ── helper: step trace ─────────────────────────────────────────────────────
-function stepTrace(x, y, color, name = '', width = 1.5) {
+function stepTrace(x, y, color, name = '') {
   return {
-    x, y, name,
-    type: 'scatter', mode: 'lines',
-    line: { color, width, shape: 'hv' },
+    x, y, name, type: 'scatter', mode: 'lines',
+    line: { color, width: 2, shape: 'hv' },
     hovertemplate: `%{x}: %{y}<extra>${name}</extra>`,
   };
 }
 
-// ── helper: bar/stem trace ─────────────────────────────────────────────────
-function stemTrace(x, y, color, name = '') {
-  return {
-    x, y, name,
-    type: 'bar',
-    marker: { color, opacity: 0.85 },
-    hovertemplate: `tap %{x}: %{y}<extra>${name}</extra>`,
-  };
-}
-
-// ── helper: threshold line ─────────────────────────────────────────────────
-function threshLine(x0, x1, val, color, dash = 'dash', label = '') {
-  return {
-    type: 'line', xref: 'x', yref: 'y',
-    x0, x1, y0: val, y1: val,
-    line: { color, dash, width: 1 },
-    label: label ? { text: label, font: { size: 9, color }, yanchor: 'bottom' } : undefined,
-  };
-}
-
-// ── tab switching ──────────────────────────────────────────────────────────
+// ── Tab switching ─────────────────────────────────────────────────────────────
 document.querySelectorAll('.tab-btn').forEach(btn => {
   btn.addEventListener('click', () => {
     document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
     document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
     btn.classList.add('active');
     document.getElementById(btn.dataset.tab).classList.add('active');
-    // trigger resize so Plotly fills the newly visible panel
     window.dispatchEvent(new Event('resize'));
   });
 });
 
-// ── load all JSON then initialise ──────────────────────────────────────────
-async function loadJSON(path) {
-  const r = await fetch(path);
-  return r.json();
-}
+// ── Load JSON data then boot ───────────────────────────────────────────────────
+fetch('data/fir.json')
+  .then(r => r.json())
+  .then(firData => {
+    initFIR(firData);
+    initMatched();
+    initPipeline();
+  })
+  .catch(() => {
+    // Static data unavailable — still init matched + pipeline (use JS only)
+    initFIR(null);
+    initMatched();
+    initPipeline();
+  });
 
-Promise.all([
-  loadJSON('data/fir.json'),
-  loadJSON('data/matched.json'),
-  loadJSON('data/pipeline.json'),
-]).then(([firData, matchedData, pipelineData]) => {
-  initFIR(firData);
-  initMatched(matchedData);
-  initPipeline(pipelineData);
-}).catch(err => {
-  console.error('Failed to load data:', err);
-  document.body.insertAdjacentHTML('afterbegin',
-    `<div style="background:#E8624C22;border-left:3px solid #E8624C;padding:12px 16px;margin:16px;border-radius:4px;color:#E8624C">
-      Failed to load data files. Run <code>python scripts/export_demo_data.py</code> first.
-    </div>`
-  );
-});
 
-// ═══════════════════════════════════════════════════════════════════════════
+// ═════════════════════════════════════════════════════════════════════════════
 // TAB 1 — FIR FILTER
-// ═══════════════════════════════════════════════════════════════════════════
+// ═════════════════════════════════════════════════════════════════════════════
 function initFIR(d) {
-  // ── 1a: Coefficient bar chart ──────────────────────────────────────────
-  Plotly.newPlot('fir-coeffs-plot', [
-    stemTrace(
-      d.coeffs.map((_, i) => i),
-      d.coeffs,
-      THEME.accent,
-      'Coefficient'
-    ),
-  ], layout({
-    title: { text: 'Impulse Response  h[n]', font: { size: 12, color: THEME.text } },
-    xaxis: { ...LAYOUT_BASE.xaxis, title: { text: 'Tap index', standoff: 4 } },
-    yaxis: { ...LAYOUT_BASE.yaxis, title: { text: 'Value (×256 scaled)', standoff: 4 } },
-    bargap: 0.3,
-    margin: { l: 56, r: 16, t: 36, b: 44 },
-  }), PLOTLY_CONFIG);
+  if (!d) return;
 
-  // ── 1b: Frequency response ────────────────────────────────────────────
+  const coeffs = DSP.FIR_COEFFS;
+
+  // Coefficient bar chart
+  Plotly.newPlot('fir-coeffs-plot', [{
+    x: coeffs.map((_, i) => i), y: coeffs,
+    type: 'bar', marker: { color: C.blue, opacity: 0.85 },
+    hovertemplate: 'h[%{x}] = %{y}<extra></extra>',
+  }], mkLayout({
+    title: { text: 'Coefficients  h[n]  (×256 scaled)', font: { size: 12, color: C.white } },
+    xaxis: { title: { text: 'Tap index' } },
+    yaxis: { title: { text: 'Value' } },
+    bargap: 0.3,
+  }), CFG);
+
+  // Frequency response
   const fr = d.freq_response;
-  Plotly.newPlot('fir-freq-plot', [
-    {
-      x: fr.freq, y: fr.db,
-      type: 'scatter', mode: 'lines',
-      line: { color: THEME.accent, width: 2 },
-      name: 'Magnitude',
-      hovertemplate: 'f/fs = %{x:.3f}<br>%{y:.1f} dB<extra></extra>',
-    },
-  ], layout({
-    title: { text: 'Magnitude Response  |H(f)|', font: { size: 12, color: THEME.text } },
-    xaxis: {
-      ...LAYOUT_BASE.xaxis,
-      title: { text: 'Normalised frequency  (0.5 = Nyquist)', standoff: 4 },
-      range: [0, 0.5],
-    },
-    yaxis: {
-      ...LAYOUT_BASE.yaxis,
-      title: { text: 'dB', standoff: 4 },
-      range: [-80, 5],
-    },
+  Plotly.newPlot('fir-freq-plot', [{
+    x: fr.freq, y: fr.db,
+    type: 'scatter', mode: 'lines',
+    line: { color: C.blue, width: 2 },
+    hovertemplate: 'f/fs=%{x:.3f}  %{y:.1f} dB<extra></extra>',
+  }], mkLayout({
+    title: { text: 'Magnitude Response  |H(f)|', font: { size: 12, color: C.white } },
+    xaxis: { title: { text: 'Normalised frequency  (0.5 = Nyquist)' }, range: [0, 0.5] },
+    yaxis: { title: { text: 'dB' }, range: [-80, 5] },
     shapes: [
-      threshLine(0, 0.5, -3, THEME.muted, 'dot'),
-      { type: 'line', xref: 'x', yref: 'paper', x0: 0.25, x1: 0.25,
-        y0: 0, y1: 1, line: { color: THEME.warn, dash: 'dash', width: 1 } },
+      { type: 'line', xref: 'x', yref: 'paper', x0: 0.25, x1: 0.25, y0: 0, y1: 1,
+        line: { color: C.yellow, dash: 'dash', width: 1 } },
+      { type: 'line', xref: 'paper', yref: 'y', x0: 0, x1: 1, y0: -3, y1: -3,
+        line: { color: C.text, dash: 'dot', width: 1 } },
     ],
     annotations: [
-      { x: 0.26, y: 0.5, xref: 'x', yref: 'paper', text: 'fc = 0.25',
-        showarrow: false, font: { color: THEME.warn, size: 10 }, xanchor: 'left' },
-      { x: 0.01, y: -3, xref: 'x', yref: 'y', text: '–3 dB',
-        showarrow: false, font: { color: THEME.muted, size: 9 }, xanchor: 'left', yanchor: 'bottom' },
+      { x: 0.26, xref: 'x', y: 0.5, yref: 'paper',
+        text: 'fc = 0.25', showarrow: false, font: { color: C.yellow, size: 10 }, xanchor: 'left' },
     ],
-    margin: { l: 56, r: 16, t: 36, b: 48 },
-  }), PLOTLY_CONFIG);
+  }), CFG);
 
-  // ── 1c: Test signal viewer ─────────────────────────────────────────────
+  // Test signal viewer
   let activeTest = 'impulse';
-
   function renderFIRTest(key) {
     activeTest = key;
     document.querySelectorAll('#fir-panel .btn[data-test]').forEach(b =>
       b.classList.toggle('active', b.dataset.test === key));
-
     const t   = d.tests[key];
-    const xs  = Array.from({ length: t.input.length }, (_, i) => i);
-    const col = { impulse: THEME.accent, dc: THEME.pass, nyquist: THEME.danger };
-
-    Plotly.newPlot('fir-test-input', [
-      stepTrace(xs, t.input, col[key], 'Input'),
-    ], layout({
-      title: { text: 'Input', font: { size: 11, color: THEME.muted } },
-      margin: { l: 48, r: 16, t: 28, b: 36 },
-      xaxis: { ...LAYOUT_BASE.xaxis, title: { text: 'Cycle', standoff: 2 } },
-    }), PLOTLY_CONFIG);
-
-    Plotly.newPlot('fir-test-output', [
-      stepTrace(xs, t.output, col[key], 'FIR output'),
-    ], layout({
-      title: { text: 'FIR Output', font: { size: 11, color: THEME.muted } },
-      margin: { l: 48, r: 16, t: 28, b: 36 },
-      xaxis: { ...LAYOUT_BASE.xaxis, title: { text: 'Cycle', standoff: 2 } },
-    }), PLOTLY_CONFIG);
+    const xs  = t.input.map((_, i) => i);
+    const col = { impulse: C.blue, dc: C.green, nyquist: C.red };
+    Plotly.react('fir-test-input',  [stepTrace(xs, t.input,  col[key], 'Input')],
+      mkLayout({ title: { text: 'Input',      font: { size: 11, color: C.text } },
+                 margin: { l: 48, r: 12, t: 28, b: 36 } }), CFG);
+    Plotly.react('fir-test-output', [stepTrace(xs, t.output, col[key], 'FIR output')],
+      mkLayout({ title: { text: 'FIR Output', font: { size: 11, color: C.text } },
+                 margin: { l: 48, r: 12, t: 28, b: 36 } }), CFG);
   }
-
-  document.querySelectorAll('#fir-panel .btn[data-test]').forEach(btn => {
-    btn.addEventListener('click', () => renderFIRTest(btn.dataset.test));
-  });
-
+  document.querySelectorAll('#fir-panel .btn[data-test]').forEach(btn =>
+    btn.addEventListener('click', () => renderFIRTest(btn.dataset.test)));
   renderFIRTest('impulse');
 
-  // ── stats ─────────────────────────────────────────────────────────────
-  document.getElementById('fir-stat-taps').textContent  = d.taps;
-  document.getElementById('fir-stat-scale').textContent = `2^${d.scale_shift}`;
+  document.getElementById('fir-stat-taps').textContent  = DSP.FIR_COEFFS.length;
+  document.getElementById('fir-stat-scale').textContent = `2^${DSP.FIR_SCALE}`;
   document.getElementById('fir-stat-dc').textContent    = '1.0';
   document.getElementById('fir-stat-nyq').textContent   = '0';
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// TAB 2 — MATCHED FILTER
-// ═══════════════════════════════════════════════════════════════════════════
-function initMatched(d) {
-  const xs = Array.from({ length: d.n_samples }, (_, i) => i);
 
-  // ── result table ───────────────────────────────────────────────────────
+// ═════════════════════════════════════════════════════════════════════════════
+// TAB 2 — MATCHED FILTER
+// ═════════════════════════════════════════════════════════════════════════════
+function initMatched() {
+  const N         = 40;
+  const threshold = DSP.THRESHOLD_PEAK;
+  const xs        = Array.from({ length: N }, (_, i) => i);
+
+  const signals = {
+    template: { label: 'Template (exact match)',  color: C.blue,
+      input: buildSig(N, 4, DSP.MF_TEMPLATE) },
+    flat:     { label: 'Flat pulse (wrong shape)', color: C.red,
+      input: buildSig(N, 4, new Array(8).fill(150)) },
+    noise:    { label: 'Alternating noise',        color: C.green,
+      input: buildSig(N, 4, Array.from({length:8}, (_,k) => 100*(k%2===0?1:-1))) },
+    reversed: { label: 'Reversed template',        color: C.yellow,
+      input: buildSig(N, 4, [...DSP.MF_TEMPLATE].reverse()) },
+  };
+
+  function buildSig(n, start, values) {
+    const s = new Array(n).fill(0);
+    values.forEach((v, i) => { if (start + i < n) s[start + i] = v; });
+    return s;
+  }
+
+  // Result table
   const tbody = document.getElementById('mf-result-body');
-  Object.entries(d.signals).forEach(([key, s]) => {
-    const pct = s.pct;
-    const cls = pct >= 99 ? 'pass' : pct < 30 ? 'warn' : '';
+  Object.entries(signals).forEach(([key, s]) => {
+    const out  = DSP.fir(DSP.MF_COEFFS, s.input, DSP.MF_SCALE);
+    const peak = Math.max(...out.map(Math.abs));
+    const pct  = (peak / DSP.MF_PEAK * 100).toFixed(1);
+    const cls  = pct >= 99 ? 'pass' : pct < 30 ? 'warn' : '';
+    s.out  = out;
+    s.peak = peak;
     tbody.insertAdjacentHTML('beforeend', `
       <tr>
         <td><span style="display:inline-block;width:10px;height:10px;
             border-radius:50%;background:${s.color};margin-right:8px"></span>${s.label}</td>
-        <td class="${cls}">${s.peak}</td>
+        <td class="${cls}">${peak}</td>
         <td class="${cls}">${pct}%</td>
         <td class="${pct >= 99 ? 'pass' : ''}">${pct >= 99 ? '✓ MATCH' : '–'}</td>
       </tr>`);
   });
 
-  // ── 4-column plots ─────────────────────────────────────────────────────
-  const threshold = d.threshold;
+  document.getElementById('mf-stat-peak').textContent   = DSP.MF_PEAK;
+  document.getElementById('mf-stat-thresh').textContent = threshold;
+  document.getElementById('mf-stat-energy').textContent =
+    DSP.MF_TEMPLATE.reduce((s, v) => s + v * v, 0);
 
-  Object.entries(d.signals).forEach(([key, s]) => {
+  // 4 signal plots
+  Object.entries(signals).forEach(([key, s]) => {
     const inEl  = document.getElementById(`mf-in-${key}`);
     const outEl = document.getElementById(`mf-out-${key}`);
     if (!inEl || !outEl) return;
 
-    Plotly.newPlot(inEl, [
-      stepTrace(xs, s.input, s.color, 'Input'),
-    ], layout({
-      title: { text: s.label, font: { size: 10, color: THEME.muted } },
-      margin: { l: 44, r: 8, t: 28, b: 32 },
-      xaxis: { ...LAYOUT_BASE.xaxis, title: { text: 'Cycle', standoff: 2 } },
-    }), PLOTLY_CONFIG);
+    Plotly.newPlot(inEl, [stepTrace(xs, s.input, s.color, 'Input')],
+      mkLayout({ title: { text: s.label, font: { size: 10, color: C.text } },
+                 margin: { l: 44, r: 8, t: 28, b: 32 } }), CFG);
 
     Plotly.newPlot(outEl, [
-      stepTrace(xs, s.output, s.color, 'MF output'),
-      {
-        x: [xs[0], xs[xs.length - 1]], y: [threshold, threshold],
-        type: 'scatter', mode: 'lines',
-        line: { color: THEME.muted, dash: 'dash', width: 1 },
-        name: `threshold ${threshold}`,
-        hoverinfo: 'skip',
-      },
-    ], layout({
-      title: { text: `Peak: ${s.peak}  (${s.pct}%)`, font: { size: 10, color: s.pct >= 99 ? THEME.pass : THEME.muted } },
+      stepTrace(xs, s.out, s.color, 'MF output'),
+      { x: [0, N-1], y: [threshold, threshold], type: 'scatter', mode: 'lines',
+        line: { color: C.text, dash: 'dash', width: 1 }, hoverinfo: 'skip' },
+    ], mkLayout({
+      title: { text: `Peak: ${s.peak}  (${(s.peak/DSP.MF_PEAK*100).toFixed(1)}%)`,
+               font: { size: 10, color: s.peak >= DSP.MF_PEAK * 0.99 ? C.green : C.text } },
       margin: { l: 44, r: 8, t: 28, b: 32 },
-      xaxis: { ...LAYOUT_BASE.xaxis, title: { text: 'Cycle', standoff: 2 } },
-      yaxis: { ...LAYOUT_BASE.yaxis, range: [-d.peak_theory - 20, d.peak_theory + 40] },
-    }), PLOTLY_CONFIG);
+      yaxis: { range: [-DSP.MF_PEAK - 20, DSP.MF_PEAK + 40] },
+    }), CFG);
   });
-
-  // stats
-  document.getElementById('mf-stat-peak').textContent   = d.peak_theory;
-  document.getElementById('mf-stat-thresh').textContent = d.threshold;
-  document.getElementById('mf-stat-energy').textContent =
-    d.peak_theory * (1 << d.scale_shift);
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// TAB 3 — FULL PIPELINE
-// ═══════════════════════════════════════════════════════════════════════════
-function initPipeline(d) {
-  const xs = Array.from({ length: d.n_samples }, (_, i) => i);
 
-  // ── highlight template region ──────────────────────────────────────────
-  const tStart = d.template_start;
-  const tEnd   = tStart + d.scaled_template.length - 1;
-  const templateShape = {
-    type: 'rect', xref: 'x', yref: 'paper',
-    x0: tStart - 0.5, x1: tEnd + 0.5, y0: 0, y1: 1,
-    fillcolor: 'rgba(76,155,232,0.06)', line: { width: 0 },
+// ═════════════════════════════════════════════════════════════════════════════
+// TAB 3 — FULL PIPELINE  (interactive + animated)
+// ═════════════════════════════════════════════════════════════════════════════
+function initPipeline() {
+  const N = 64;
+
+  // ── Preset signals ─────────────────────────────────────────────────────────
+  const PRESETS = {
+    template: {
+      label: 'Template ×4',
+      fn: () => {
+        const s = new Array(N).fill(0);
+        DSP.MF_TEMPLATE.forEach((v, i) => { s[8 + i] = v * 4; });
+        return s;
+      },
+    },
+    dc: {
+      label: 'Strong DC',
+      fn: () => new Array(N).fill(0).map((_, i) => (i >= 8 && i < 40) ? 800 : 0),
+    },
+    nyquist: {
+      label: 'Nyquist noise',
+      fn: () => new Array(N).fill(0).map((_, i) => (i >= 4 && i < 36) ? (1000*(i%2===0?1:-1)) : 0),
+    },
+    double: {
+      label: 'Two pulses',
+      fn: () => {
+        const s = new Array(N).fill(0);
+        DSP.MF_TEMPLATE.forEach((v, i) => { s[4 + i] = v * 4; });
+        DSP.MF_TEMPLATE.forEach((v, i) => { s[32 + i] = v * 3; });
+        return s;
+      },
+    },
+    custom: { label: 'Custom', fn: null },
   };
 
-  // ── raw input ──────────────────────────────────────────────────────────
-  Plotly.newPlot('pl-raw', [
-    stepTrace(xs, d.raw_in, THEME.accent, 'Raw input'),
-  ], layout({
-    title: { text: 'Raw Input  (scaled template ×4)', font: { size: 11, color: THEME.muted } },
-    shapes: [templateShape],
-    margin: { l: 52, r: 16, t: 32, b: 32 },
-  }), PLOTLY_CONFIG);
+  // ── State ──────────────────────────────────────────────────────────────────
+  let currentInput  = PRESETS.template.fn();
+  let pipelineResult = DSP.runPipeline(currentInput);
+  let animHandle    = null;
+  let animStep      = 0;
+  let isPlaying     = false;
+  let animSpeed     = 80;  // ms per step
 
-  // ── FIR output ─────────────────────────────────────────────────────────
-  Plotly.newPlot('pl-fir', [
-    stepTrace(xs, d.fir_out, '#7C9FD8', 'FIR output'),
-    {
-      x: xs, y: xs.map(i => d.detected[i] ? Math.max(...d.fir_out) * 0.12 : null),
-      type: 'scatter', mode: 'markers', name: 'detected',
-      marker: { color: THEME.pass, size: 5, symbol: 'triangle-up' },
-      hovertemplate: 'detected<extra></extra>',
-    },
-  ], layout({
-    title: { text: 'After FIR Low-Pass  +  Threshold Events', font: { size: 11, color: THEME.muted } },
-    shapes: [
-      templateShape,
-      threshLine(0, d.n_samples - 1, d.threshold_det, THEME.pass, 'dash'),
-    ],
-    annotations: [{
-      x: 1, y: d.threshold_det, xref: 'x', yref: 'y',
-      text: `thr ${d.threshold_det}`, showarrow: false,
-      font: { color: THEME.pass, size: 9 }, xanchor: 'left', yanchor: 'bottom',
-    }],
-    margin: { l: 52, r: 16, t: 32, b: 32 },
-  }), PLOTLY_CONFIG);
+  const xs = Array.from({ length: N }, (_, i) => i);
 
-  // ── MF output ──────────────────────────────────────────────────────────
-  // mark peak events
-  const peakX = d.peak_events.map(e => e.cycle);
-  const peakY = d.peak_events.map(e => e.peak_val);
+  // ── Initial static render ──────────────────────────────────────────────────
+  renderStatic(pipelineResult);
 
-  Plotly.newPlot('pl-mf', [
-    stepTrace(xs, d.mf_out, THEME.accent2, 'MF output'),
-    {
-      x: peakX, y: peakY,
-      type: 'scatter', mode: 'markers+text',
-      name: 'Peak event',
-      marker: { color: THEME.warn, size: 10, symbol: 'star' },
-      text: peakX.map((_, i) => `peak=${peakY[i]}`),
-      textposition: 'top center',
-      textfont: { size: 9, color: THEME.warn },
-      hovertemplate: 'Peak: %{y}  pos=%{x}<extra></extra>',
-    },
-  ], layout({
-    title: { text: 'Matched Filter Output  +  Peak Events', font: { size: 11, color: THEME.muted } },
-    shapes: [
-      templateShape,
-      threshLine(0, d.n_samples - 1,  d.threshold_peak, THEME.warn, 'dash'),
-      threshLine(0, d.n_samples - 1, -d.threshold_peak, THEME.warn, 'dash'),
-    ],
-    annotations: [{
-      x: 1, y: d.threshold_peak, xref: 'x', yref: 'y',
-      text: `thr ±${d.threshold_peak}`, showarrow: false,
-      font: { color: THEME.warn, size: 9 }, xanchor: 'left', yanchor: 'bottom',
-    }],
-    margin: { l: 52, r: 16, t: 32, b: 40 },
-    xaxis: { ...LAYOUT_BASE.xaxis, title: { text: 'Clock cycle', standoff: 4 } },
-  }), PLOTLY_CONFIG);
-
-  // ── peak event table ───────────────────────────────────────────────────
-  const ptbody = document.getElementById('pl-peak-body');
-  if (d.peak_events.length === 0) {
-    ptbody.insertAdjacentHTML('beforeend',
-      '<tr><td colspan="3" style="color:var(--muted);text-align:center">No peaks detected</td></tr>');
-  } else {
-    d.peak_events.forEach((e, i) => {
-      ptbody.insertAdjacentHTML('beforeend', `
-        <tr>
-          <td>#${i + 1}</td>
-          <td class="pass">${e.peak_val}</td>
-          <td>${e.cycle}</td>
-        </tr>`);
+  // ── Preset buttons ──────────────────────────────────────────────────────────
+  document.querySelectorAll('.preset-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      const key = btn.dataset.preset;
+      if (key !== 'custom') {
+        currentInput   = PRESETS[key].fn();
+        pipelineResult = DSP.runPipeline(currentInput);
+        stopAnimation();
+        renderStatic(pipelineResult);
+        document.getElementById('custom-input-area').style.display = 'none';
+      } else {
+        document.getElementById('custom-input-area').style.display = 'block';
+      }
     });
+  });
+
+  // ── Custom input ───────────────────────────────────────────────────────────
+  document.getElementById('custom-apply').addEventListener('click', () => {
+    const raw = document.getElementById('custom-text').value;
+    const vals = raw.split(/[\s,;]+/).map(Number).filter(v => !isNaN(v));
+    if (vals.length === 0) return;
+    currentInput = new Array(N).fill(0);
+    vals.slice(0, N).forEach((v, i) => { currentInput[i] = Math.round(v); });
+    pipelineResult = DSP.runPipeline(currentInput);
+    stopAnimation();
+    renderStatic(pipelineResult);
+  });
+
+  // ── Speed slider ───────────────────────────────────────────────────────────
+  const speedSlider = document.getElementById('anim-speed');
+  speedSlider.addEventListener('input', () => {
+    animSpeed = 210 - parseInt(speedSlider.value);  // invert: high = fast
+    document.getElementById('speed-label').textContent =
+      animSpeed < 60 ? 'Fast' : animSpeed < 120 ? 'Medium' : 'Slow';
+    if (isPlaying) { stopAnimation(); startAnimation(); }
+  });
+
+  // ── Play / Pause ──────────────────────────────────────────────────────────
+  document.getElementById('play-btn').addEventListener('click', () => {
+    if (isPlaying) {
+      stopAnimation();
+    } else {
+      if (animStep >= N) animStep = 0;
+      startAnimation();
+    }
+  });
+
+  // ── Reset ─────────────────────────────────────────────────────────────────
+  document.getElementById('reset-btn').addEventListener('click', () => {
+    stopAnimation();
+    animStep = 0;
+    renderStatic(pipelineResult);
+  });
+
+  // ── Animation ─────────────────────────────────────────────────────────────
+  function startAnimation() {
+    isPlaying = true;
+    document.getElementById('play-btn').textContent = '⏸ Pause';
+    document.getElementById('play-btn').classList.add('active');
+    animHandle = setInterval(() => {
+      animStep++;
+      if (animStep >= N) {
+        stopAnimation();
+        renderStatic(pipelineResult);
+        return;
+      }
+      renderAnimFrame(pipelineResult, animStep);
+    }, animSpeed);
   }
 
-  // ── stats ─────────────────────────────────────────────────────────────
-  document.getElementById('pl-stat-peaks').textContent  = d.peak_events.length;
-  document.getElementById('pl-stat-tdet').textContent   = d.threshold_det;
-  document.getElementById('pl-stat-tpeak').textContent  = d.threshold_peak;
+  function stopAnimation() {
+    isPlaying = false;
+    clearInterval(animHandle);
+    animHandle = null;
+    document.getElementById('play-btn').textContent = '▶ Play';
+    document.getElementById('play-btn').classList.remove('active');
+  }
+
+  // ── Render: full static ────────────────────────────────────────────────────
+  function renderStatic(r) {
+    animStep = N;
+    updatePlots(r, N);
+    updatePeakTable(r.peakEvents);
+    updateStageStats(r);
+  }
+
+  // ── Render: single animation frame ────────────────────────────────────────
+  function renderAnimFrame(r, step) {
+    updatePlots(r, step);
+    // highlight active pipeline stage
+    const stage = step < 2 ? 'raw' : step < 4 ? 'fir' : step < 8 ? 'mf' : 'peak';
+    document.querySelectorAll('.pipe-block').forEach(el => {
+      el.classList.remove('active-stage');
+      if (el.dataset.stage === stage) el.classList.add('active-stage');
+    });
+    document.getElementById('anim-cycle').textContent = `Cycle ${step}`;
+  }
+
+  // ── Update all three plots up to `step` samples ────────────────────────────
+  function updatePlots(r, step) {
+    const s = Math.min(step, N);
+    const xSlice  = xs.slice(0, s);
+    const cursor  = s < N ? s : null;
+
+    // Cursor (current sample marker)
+    const cursorShape = cursor !== null ? [{
+      type: 'line', xref: 'x', yref: 'paper',
+      x0: cursor, x1: cursor, y0: 0, y1: 1,
+      line: { color: C.white, width: 1, dash: 'dot' },
+    }] : [];
+
+    // ── Raw input ────────────────────────────────────────────────────────────
+    Plotly.react('pl-raw', [
+      stepTrace(xSlice, r.rawInput.slice(0, s), C.blue, 'Raw input'),
+    ], mkLayout({
+      title: { text: 'Raw Input', font: { size: 11, color: C.text } },
+      shapes: cursorShape,
+      margin: { l: 52, r: 16, t: 30, b: 28 },
+      xaxis: { range: [0, N - 1] },
+      yaxis: { range: [Math.min(-50, ...r.rawInput) - 20, Math.max(50, ...r.rawInput) + 50] },
+    }), CFG);
+
+    // ── FIR output ───────────────────────────────────────────────────────────
+    const detMarkers = xSlice
+      .map((x, i) => ({ x, y: r.detected[i] }))
+      .filter(p => p.y === 1);
+
+    Plotly.react('pl-fir', [
+      stepTrace(xSlice, r.firOut.slice(0, s), '#7C9FD8', 'FIR output'),
+      {
+        x: detMarkers.map(p => p.x),
+        y: detMarkers.map(() => DSP.THRESHOLD_DET * 0.15),
+        type: 'scatter', mode: 'markers', name: 'detected',
+        marker: { color: C.green, size: 7, symbol: 'triangle-up' },
+        hovertemplate: 'detected<extra></extra>',
+      },
+    ], mkLayout({
+      title: { text: 'After FIR  +  Threshold Events (▲)', font: { size: 11, color: C.text } },
+      shapes: [
+        ...cursorShape,
+        { type: 'line', xref: 'paper', yref: 'y', x0: 0, x1: 1,
+          y0: DSP.THRESHOLD_DET, y1: DSP.THRESHOLD_DET,
+          line: { color: C.green, dash: 'dash', width: 1 } },
+      ],
+      margin: { l: 52, r: 16, t: 30, b: 28 },
+      xaxis: { range: [0, N - 1] },
+      yaxis: { range: [Math.min(-50, ...r.firOut) - 20, Math.max(600, ...r.firOut) + 80] },
+    }), CFG);
+
+    // ── MF output + peak events ───────────────────────────────────────────────
+    const visiblePeaks = r.peakEvents.filter(e => e.cycle <= s);
+    Plotly.react('pl-mf', [
+      stepTrace(xSlice, r.mfOut.slice(0, s), C.purple, 'MF output'),
+      {
+        x: visiblePeaks.map(e => e.cycle),
+        y: visiblePeaks.map(e => e.peak_val),
+        type: 'scatter', mode: 'markers+text',
+        marker: { color: C.yellow, size: 12, symbol: 'star' },
+        text: visiblePeaks.map(e => `${e.peak_val}`),
+        textposition: 'top center',
+        textfont: { size: 9, color: C.yellow },
+        hovertemplate: 'peak_val=%{y}  cycle=%{x}<extra></extra>',
+      },
+    ], mkLayout({
+      title: { text: 'Matched Filter  +  Peak Events (★)', font: { size: 11, color: C.text } },
+      shapes: [
+        ...cursorShape,
+        { type: 'line', xref: 'paper', yref: 'y', x0: 0, x1: 1,
+          y0:  DSP.THRESHOLD_PEAK, y1:  DSP.THRESHOLD_PEAK,
+          line: { color: C.yellow, dash: 'dash', width: 1 } },
+        { type: 'line', xref: 'paper', yref: 'y', x0: 0, x1: 1,
+          y0: -DSP.THRESHOLD_PEAK, y1: -DSP.THRESHOLD_PEAK,
+          line: { color: C.yellow, dash: 'dash', width: 1 } },
+      ],
+      margin: { l: 52, r: 16, t: 30, b: 40 },
+      xaxis: { range: [0, N - 1], title: { text: 'Clock cycle' } },
+      yaxis: { range: [-(DSP.MF_PEAK * 5 + 100), DSP.MF_PEAK * 5 + 200] },
+    }), CFG);
+  }
+
+  // ── Peak table ─────────────────────────────────────────────────────────────
+  function updatePeakTable(events) {
+    const tbody = document.getElementById('pl-peak-body');
+    tbody.innerHTML = '';
+    if (events.length === 0) {
+      tbody.insertAdjacentHTML('beforeend',
+        '<tr><td colspan="3" style="color:var(--muted);text-align:center;padding:12px">No peaks detected</td></tr>');
+    } else {
+      events.forEach((e, i) => {
+        tbody.insertAdjacentHTML('beforeend', `
+          <tr>
+            <td>#${i + 1}</td>
+            <td class="pass">${e.peak_val}</td>
+            <td>${e.cycle}</td>
+          </tr>`);
+      });
+    }
+  }
+
+  // ── Stage stats ────────────────────────────────────────────────────────────
+  function updateStageStats(r) {
+    document.getElementById('pl-stat-peaks').textContent = r.peakEvents.length;
+    document.getElementById('pl-stat-tdet').textContent  = DSP.THRESHOLD_DET;
+    document.getElementById('pl-stat-tpeak').textContent = DSP.THRESHOLD_PEAK;
+    document.getElementById('anim-cycle').textContent = '';
+    document.querySelectorAll('.pipe-block').forEach(el => el.classList.remove('active-stage'));
+  }
 }

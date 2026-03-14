@@ -291,6 +291,15 @@ header p {
 
 .callout strong { color: var(--text); }
 
+/* ── Plot label ───────────────────────────────────────────────────────────── */
+.plot-label {
+  font-size: 0.75rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 6px;
+}
+
 /* ── Footer ───────────────────────────────────────────────────────────────── */
 footer {
   border-top: 1px solid var(--border);
